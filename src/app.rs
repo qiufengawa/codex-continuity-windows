@@ -36,7 +36,156 @@ const ID_SYNC: i32 = 1011;
 const ID_EXPORT: i32 = 1012;
 const ID_COPY: i32 = 1013;
 const ID_PROGRESS: i32 = 1014;
+const ID_LANG: i32 = 1015;
 const TIMER_PROGRESS: usize = 1;
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Lang {
+    Zh,
+    En,
+}
+
+impl Default for Lang {
+    fn default() -> Self {
+        Self::Zh
+    }
+}
+
+impl Lang {
+    fn toggled(self) -> Self {
+        match self {
+            Self::Zh => Self::En,
+            Self::En => Self::Zh,
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+enum UiText {
+    Title,
+    IncludeArchived,
+    Refresh,
+    OpenSessions,
+    NativeResume,
+    DiagnoseResume,
+    ShowDetail,
+    PreviewSync,
+    SyncProvider,
+    ExportRestore,
+    CopyRestore,
+    Language,
+    Ready,
+    LoadingSessions,
+    RefreshingSessions,
+    PreviewingSync,
+    SyncingProvider,
+    ExportingRestore,
+    CopyingRestore,
+    Working,
+    SyncConfirm,
+    SyncTitle,
+    NoSessions,
+    ErrorPrefix,
+}
+
+fn ui_text(lang: Lang, key: UiText) -> &'static str {
+    match lang {
+        Lang::Zh => match key {
+            UiText::Title => "Codex 会话连续性（Windows）",
+            UiText::IncludeArchived => "包含归档",
+            UiText::Refresh => "刷新",
+            UiText::OpenSessions => "打开会话文件夹",
+            UiText::NativeResume => "原生恢复命令",
+            UiText::DiagnoseResume => "/resume 风险诊断",
+            UiText::ShowDetail => "查看详情",
+            UiText::PreviewSync => "预览同步",
+            UiText::SyncProvider => "同步到当前 Provider",
+            UiText::ExportRestore => "导出恢复文件",
+            UiText::CopyRestore => "复制恢复提示",
+            UiText::Language => "English",
+            UiText::Ready => "就绪",
+            UiText::LoadingSessions => "正在加载会话...",
+            UiText::RefreshingSessions => "正在刷新会话",
+            UiText::PreviewingSync => "正在预览 Provider 同步",
+            UiText::SyncingProvider => "正在同步 Provider 元数据",
+            UiText::ExportingRestore => "正在导出恢复文件",
+            UiText::CopyingRestore => "正在复制恢复提示",
+            UiText::Working => "处理中",
+            UiText::SyncConfirm => "将先备份，然后更新 Codex Provider 元数据。是否继续？",
+            UiText::SyncTitle => "同步 Provider",
+            UiText::NoSessions => "未找到本地会话。",
+            UiText::ErrorPrefix => "错误",
+        },
+        Lang::En => match key {
+            UiText::Title => "Codex Continuity for Windows",
+            UiText::IncludeArchived => "Include archived",
+            UiText::Refresh => "Refresh",
+            UiText::OpenSessions => "Open sessions",
+            UiText::NativeResume => "Native Resume Command",
+            UiText::DiagnoseResume => "Diagnose /resume Risk",
+            UiText::ShowDetail => "Show Detail",
+            UiText::PreviewSync => "Preview Sync",
+            UiText::SyncProvider => "Sync to Current Provider",
+            UiText::ExportRestore => "Export Restore File",
+            UiText::CopyRestore => "Copy Restore Prompt",
+            UiText::Language => "中文",
+            UiText::Ready => "Ready",
+            UiText::LoadingSessions => "Loading sessions...",
+            UiText::RefreshingSessions => "Refreshing sessions",
+            UiText::PreviewingSync => "Previewing provider sync",
+            UiText::SyncingProvider => "Syncing provider metadata",
+            UiText::ExportingRestore => "Exporting restore file",
+            UiText::CopyingRestore => "Copying restore prompt",
+            UiText::Working => "Working",
+            UiText::SyncConfirm => "This will backup and update Codex provider metadata. Continue?",
+            UiText::SyncTitle => "Sync Provider",
+            UiText::NoSessions => "No local sessions found.",
+            UiText::ErrorPrefix => "error",
+        },
+    }
+}
+
+fn current_lang() -> Lang {
+    STATE.with(|cell| cell.borrow().as_ref().map(|s| s.lang).unwrap_or_default())
+}
+
+fn t(key: UiText) -> &'static str {
+    ui_text(current_lang(), key)
+}
+
+fn unknown(lang: Lang) -> &'static str {
+    match lang {
+        Lang::Zh => "未知",
+        Lang::En => "unknown",
+    }
+}
+
+fn unnamed(lang: Lang) -> &'static str {
+    match lang {
+        Lang::Zh => "未命名",
+        Lang::En => "unnamed",
+    }
+}
+
+fn unknown_cwd(lang: Lang) -> &'static str {
+    match lang {
+        Lang::Zh => "未知目录",
+        Lang::En => "unknown cwd",
+    }
+}
+
+fn yes_no(lang: Lang, value: bool) -> &'static str {
+    match (lang, value) {
+        (Lang::Zh, true) => "是",
+        (Lang::Zh, false) => "否",
+        (Lang::En, true) => "true",
+        (Lang::En, false) => "false",
+    }
+}
+
+fn error_text(error: impl std::fmt::Display) -> String {
+    format!("{}: {error}", t(UiText::ErrorPrefix))
+}
 
 #[derive(Clone, Default)]
 struct Message {
@@ -97,8 +246,20 @@ struct State {
     details: HWND,
     search: HWND,
     include_archived: HWND,
+    refresh: HWND,
+    open: HWND,
+    native: HWND,
+    doctor: HWND,
+    detail: HWND,
+    preview_sync: HWND,
+    sync: HWND,
+    export: HWND,
+    copy: HWND,
+    language: HWND,
     progress: HWND,
     progress_step: usize,
+    busy_label: String,
+    lang: Lang,
     sessions: Vec<Session>,
     filtered_indices: Vec<usize>,
 }
@@ -182,6 +343,7 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
 }
 
 unsafe fn create_ui(hwnd: HWND) {
+    let lang = Lang::default();
     let mono = CreateFontW(
         16,
         0,
@@ -226,121 +388,132 @@ unsafe fn create_ui(hwnd: HWND) {
     );
     let include_archived = child(
         WC_BUTTONW,
-        "Include archived",
+        ui_text(lang, UiText::IncludeArchived),
         style(WS_VISIBLE | WS_CHILD, BS_AUTOCHECKBOX),
         420,
         46,
-        140,
+        150,
         28,
         hwnd,
         ID_INCLUDE_ARCHIVED,
     );
-    child(
+    let refresh = child(
         WC_BUTTONW,
-        "Refresh",
+        ui_text(lang, UiText::Refresh),
         style(WS_VISIBLE | WS_CHILD, BS_PUSHBUTTON),
-        568,
+        578,
         44,
-        88,
+        90,
         30,
         hwnd,
         ID_REFRESH,
     );
-    child(
+    let open = child(
         WC_BUTTONW,
-        "Open sessions",
+        ui_text(lang, UiText::OpenSessions),
         style(WS_VISIBLE | WS_CHILD, BS_PUSHBUTTON),
-        664,
+        676,
         44,
-        118,
+        150,
         30,
         hwnd,
         ID_OPEN,
     );
-    child(
+    let language = child(
         WC_BUTTONW,
-        "Native Resume Command",
+        ui_text(lang, UiText::Language),
+        style(WS_VISIBLE | WS_CHILD, BS_PUSHBUTTON),
+        834,
+        44,
+        96,
+        30,
+        hwnd,
+        ID_LANG,
+    );
+    let native = child(
+        WC_BUTTONW,
+        ui_text(lang, UiText::NativeResume),
         style(WS_VISIBLE | WS_CHILD, BS_PUSHBUTTON),
         420,
         84,
-        170,
+        190,
         32,
         hwnd,
         ID_NATIVE,
     );
-    child(
+    let doctor = child(
         WC_BUTTONW,
-        "Diagnose /resume Risk",
+        ui_text(lang, UiText::DiagnoseResume),
         style(WS_VISIBLE | WS_CHILD, BS_PUSHBUTTON),
-        598,
+        618,
         84,
-        170,
+        190,
         32,
         hwnd,
         ID_DOCTOR,
     );
-    child(
+    let detail = child(
         WC_BUTTONW,
-        "Show Detail",
+        ui_text(lang, UiText::ShowDetail),
         style(WS_VISIBLE | WS_CHILD, BS_PUSHBUTTON),
-        776,
-        84,
-        100,
-        32,
-        hwnd,
-        ID_DETAIL,
-    );
-    child(
-        WC_BUTTONW,
-        "Preview Sync",
-        style(WS_VISIBLE | WS_CHILD, BS_PUSHBUTTON),
-        884,
+        816,
         84,
         110,
         32,
         hwnd,
+        ID_DETAIL,
+    );
+    let preview_sync = child(
+        WC_BUTTONW,
+        ui_text(lang, UiText::PreviewSync),
+        style(WS_VISIBLE | WS_CHILD, BS_PUSHBUTTON),
+        934,
+        84,
+        120,
+        32,
+        hwnd,
         ID_PREVIEW_SYNC,
     );
-    child(
+    let sync = child(
         WC_BUTTONW,
-        "Sync to Current Provider",
+        ui_text(lang, UiText::SyncProvider),
         style(WS_VISIBLE | WS_CHILD, BS_PUSHBUTTON),
-        1002,
-        84,
-        164,
+        420,
+        122,
+        190,
         32,
         hwnd,
         ID_SYNC,
     );
-    child(
+    let export = child(
         WC_BUTTONW,
-        "Export Restore File",
+        ui_text(lang, UiText::ExportRestore),
         style(WS_VISIBLE | WS_CHILD, BS_PUSHBUTTON),
-        420,
+        618,
         122,
-        150,
+        160,
         32,
         hwnd,
         ID_EXPORT,
     );
-    child(
+    let copy = child(
         WC_BUTTONW,
-        "Copy Restore Prompt",
+        ui_text(lang, UiText::CopyRestore),
         style(WS_VISIBLE | WS_CHILD, BS_PUSHBUTTON),
-        578,
+        786,
         122,
-        160,
+        170,
         32,
         hwnd,
         ID_COPY,
     );
     let progress = child(
         WC_EDITW,
-        "Ready",
+        ui_text(lang, UiText::Ready),
         style(WS_BORDER | WS_VISIBLE | WS_CHILD, ES_READONLY),
-        748,
+        964,
         122,
-        418,
+        202,
         32,
         hwnd,
         ID_PROGRESS,
@@ -370,13 +543,26 @@ unsafe fn create_ui(hwnd: HWND) {
             details,
             search,
             include_archived,
+            refresh,
+            open,
+            native,
+            doctor,
+            detail,
+            preview_sync,
+            sync,
+            export,
+            copy,
+            language,
             progress,
             progress_step: 0,
+            busy_label: String::new(),
+            lang,
             sessions: vec![],
             filtered_indices: vec![],
         })
     });
-    set_details("Loading sessions...");
+    apply_language(hwnd);
+    set_details(ui_text(lang, UiText::LoadingSessions));
     refresh_sessions();
 }
 
@@ -426,67 +612,118 @@ unsafe fn layout(hwnd: HWND) {
     let _ = GetClientRect(hwnd, &mut r);
     let width = r.right - r.left;
     let height = r.bottom - r.top;
+    let right_width = (width - 438).max(260);
+    let progress_width = (width - 982).max(180);
     STATE.with(|cell| {
         if let Some(st) = cell.borrow().as_ref() {
             let _ = MoveWindow(st.search, 12, 46, 390, 26, true);
             let _ = MoveWindow(st.list, 12, 82, 390, height - 96, true);
-            let _ = MoveWindow(st.progress, 748, 122, width - 766, 32, true);
-            let _ = MoveWindow(st.details, 420, 164, width - 438, height - 178, true);
+            let _ = MoveWindow(st.include_archived, 420, 46, 150, 28, true);
+            let _ = MoveWindow(st.refresh, 578, 44, 90, 30, true);
+            let _ = MoveWindow(st.open, 676, 44, 150, 30, true);
+            let _ = MoveWindow(st.language, 834, 44, 96, 30, true);
+            let _ = MoveWindow(st.native, 420, 84, 190, 32, true);
+            let _ = MoveWindow(st.doctor, 618, 84, 190, 32, true);
+            let _ = MoveWindow(st.detail, 816, 84, 110, 32, true);
+            let _ = MoveWindow(st.preview_sync, 934, 84, 120, 32, true);
+            let _ = MoveWindow(st.sync, 420, 122, 190, 32, true);
+            let _ = MoveWindow(st.export, 618, 122, 160, 32, true);
+            let _ = MoveWindow(st.copy, 786, 122, 170, 32, true);
+            let _ = MoveWindow(st.progress, 964, 122, progress_width, 32, true);
+            let _ = MoveWindow(st.details, 420, 164, right_width, height - 178, true);
         }
     });
+}
+
+fn apply_language(hwnd: HWND) {
+    STATE.with(|cell| {
+        if let Some(st) = cell.borrow().as_ref() {
+            let lang = st.lang;
+            set_text(hwnd, ui_text(lang, UiText::Title));
+            set_text(st.include_archived, ui_text(lang, UiText::IncludeArchived));
+            set_text(st.refresh, ui_text(lang, UiText::Refresh));
+            set_text(st.open, ui_text(lang, UiText::OpenSessions));
+            set_text(st.native, ui_text(lang, UiText::NativeResume));
+            set_text(st.doctor, ui_text(lang, UiText::DiagnoseResume));
+            set_text(st.detail, ui_text(lang, UiText::ShowDetail));
+            set_text(st.preview_sync, ui_text(lang, UiText::PreviewSync));
+            set_text(st.sync, ui_text(lang, UiText::SyncProvider));
+            set_text(st.export, ui_text(lang, UiText::ExportRestore));
+            set_text(st.copy, ui_text(lang, UiText::CopyRestore));
+            set_text(st.language, ui_text(lang, UiText::Language));
+            if st.progress_step == 0 || st.progress_step == 100 {
+                set_text(st.progress, ui_text(lang, UiText::Ready));
+            }
+        }
+    });
+}
+
+fn toggle_language(hwnd: HWND) {
+    STATE.with(|cell| {
+        if let Some(st) = cell.borrow_mut().as_mut() {
+            st.lang = st.lang.toggled();
+            st.progress_step = 100;
+            st.busy_label.clear();
+        }
+    });
+    apply_language(hwnd);
+    preview_selected();
 }
 
 fn handle_command(hwnd: HWND, wparam: WPARAM) {
     let id = (wparam.0 & 0xffff) as i32;
     let code = ((wparam.0 >> 16) & 0xffff) as u16;
     match id {
-        ID_REFRESH => with_busy(hwnd, "Refreshing sessions", refresh_sessions),
-        ID_INCLUDE_ARCHIVED => with_busy(hwnd, "Refreshing sessions", refresh_sessions),
+        ID_REFRESH => with_busy(hwnd, t(UiText::RefreshingSessions), refresh_sessions),
+        ID_INCLUDE_ARCHIVED => with_busy(hwnd, t(UiText::RefreshingSessions), refresh_sessions),
+        ID_LANG => toggle_language(hwnd),
         ID_OPEN => open_sessions_folder(),
         ID_LIST if code == LBN_SELCHANGE as u16 => preview_selected(),
         ID_SEARCH if code == EN_CHANGE as u16 => apply_filter(),
         ID_DETAIL => {
             if let Some(s) = selected_session() {
-                set_details(&render_detail(&s));
+                set_details(&render_detail(&s, current_lang()));
             }
         }
         ID_NATIVE => {
             if let Some(s) = selected_session() {
-                set_details(&render_native(&s));
+                set_details(&render_native(&s, current_lang()));
             }
         }
         ID_DOCTOR => {
             if let Some(s) = selected_session() {
-                set_details(&render_doctor(&s));
+                set_details(&render_doctor(&s, current_lang()));
             }
         }
-        ID_PREVIEW_SYNC => with_busy(hwnd, "Previewing provider sync", || {
-            match render_sync(true) {
+        ID_PREVIEW_SYNC => with_busy(hwnd, t(UiText::PreviewingSync), || {
+            match render_sync(true, current_lang()) {
                 Ok(t) => set_details(&t),
-                Err(e) => set_details(&format!("error: {e}")),
+                Err(e) => set_details(&error_text(e)),
             }
         }),
         ID_SYNC => unsafe {
+            let msg = wide(t(UiText::SyncConfirm));
+            let title = wide(t(UiText::SyncTitle));
             let answer = MessageBoxW(
                 hwnd,
-                w!("This will backup and update Codex provider metadata. Continue?"),
-                w!("Sync Provider"),
+                PCWSTR(msg.as_ptr()),
+                PCWSTR(title.as_ptr()),
                 MB_OKCANCEL | MB_ICONWARNING,
             );
             if answer == IDOK {
-                with_busy(hwnd, "Syncing provider metadata", || {
-                    match render_sync(false) {
+                with_busy(hwnd, t(UiText::SyncingProvider), || {
+                    match render_sync(false, current_lang()) {
                         Ok(t) => {
                             set_details(&t);
                             refresh_sessions();
                         }
-                        Err(e) => set_details(&format!("error: {e}")),
+                        Err(e) => set_details(&error_text(e)),
                     }
                 })
             }
         },
-        ID_EXPORT => with_busy(hwnd, "Exporting restore file", export_restore),
-        ID_COPY => with_busy(hwnd, "Copying restore prompt", copy_restore),
+        ID_EXPORT => with_busy(hwnd, t(UiText::ExportingRestore), export_restore),
+        ID_COPY => with_busy(hwnd, t(UiText::CopyingRestore), copy_restore),
         _ => {}
     }
 }
@@ -495,7 +732,7 @@ fn with_busy<F: FnOnce()>(hwnd: HWND, label: &str, action: F) {
     start_progress(hwnd, label);
     pump_ui();
     action();
-    stop_progress(hwnd, "Ready");
+    stop_progress(hwnd, t(UiText::Ready));
     pump_ui();
 }
 
@@ -503,6 +740,7 @@ fn start_progress(hwnd: HWND, label: &str) {
     STATE.with(|cell| {
         if let Some(st) = cell.borrow_mut().as_mut() {
             st.progress_step = 0;
+            st.busy_label = label.to_string();
             set_text(st.progress, &format!("{}  0%", label));
         }
     });
@@ -528,6 +766,7 @@ fn stop_progress(hwnd: HWND, label: &str) {
     STATE.with(|cell| {
         if let Some(st) = cell.borrow_mut().as_mut() {
             st.progress_step = 100;
+            st.busy_label.clear();
             set_text(st.progress, label);
         }
     });
@@ -539,9 +778,14 @@ fn tick_progress(_hwnd: HWND) {
             st.progress_step = (st.progress_step + 7).min(95);
             let bars = (st.progress_step / 10).min(10);
             let bar = format!("{}{}", "█".repeat(bars), "░".repeat(10 - bars));
+            let label = if st.busy_label.is_empty() {
+                ui_text(st.lang, UiText::Working)
+            } else {
+                &st.busy_label
+            };
             set_text(
                 st.progress,
-                &format!("Working [{}] {}%", bar, st.progress_step),
+                &format!("{} [{}] {}%", label, bar, st.progress_step),
             );
         }
     });
@@ -566,16 +810,17 @@ fn refresh_sessions() {
             });
             apply_filter();
             if selected_session().is_none() {
-                set_details("No local sessions found.");
+                set_details(t(UiText::NoSessions));
             }
         }
-        Err(e) => set_details(&format!("error: {e}")),
+        Err(e) => set_details(&error_text(e)),
     }
 }
 
 fn apply_filter() {
     let search_hwnd = STATE.with(|c| c.borrow().as_ref().unwrap().search);
     let needle = get_text(search_hwnd).to_lowercase();
+    let lang = current_lang();
     STATE.with(|cell| unsafe {
         if let Some(st) = cell.borrow_mut().as_mut() {
             SendMessageW(st.list, LB_RESETCONTENT, WPARAM(0), LPARAM(0));
@@ -589,16 +834,20 @@ fn apply_filter() {
                 if needle.is_empty() || hay.contains(&needle) {
                     st.filtered_indices.push(idx);
                     let item = format!(
-                        "{}  {}  turns {} | {} | {}",
+                        "{}  {}  {} {} | {} | {}",
                         compact_time(&sess.last_timestamp),
                         if sess.provider.is_empty() {
-                            "unknown"
+                            unknown(lang)
                         } else {
                             &sess.provider
                         },
+                        match lang {
+                            Lang::Zh => "轮次",
+                            Lang::En => "turns",
+                        },
                         sess.user_turns(),
                         if sess.thread_name.is_empty() {
-                            "unnamed"
+                            unnamed(lang)
                         } else {
                             &sess.thread_name
                         },
@@ -636,8 +885,27 @@ fn selected_session() -> Option<Session> {
 
 fn preview_selected() {
     if let Some(s) = selected_session() {
-        set_details(&format!("Selected session\r\n\r\nid:       {}\r\nupdated:  {}\r\nprovider: {}\r\nturns:    {}\r\ncontext:  {} | {}\r\n\r\nClick Show Detail, Diagnose /resume Risk, Native Resume Command, or Provider Sync actions.",
-            s.id, compact_time(&s.last_timestamp), if s.provider.is_empty() { "unknown" } else { &s.provider }, s.user_turns(), if s.thread_name.is_empty() { "unnamed" } else { &s.thread_name }, if s.cwd.is_empty() { "unknown cwd" } else { &s.cwd }));
+        let lang = current_lang();
+        match lang {
+            Lang::Zh => set_details(&format!(
+                "已选择会话\r\n\r\nid:       {}\r\n更新时间: {}\r\nprovider: {}\r\n轮次:     {}\r\n上下文:   {} | {}\r\n\r\n可点击“查看详情”、“/resume 风险诊断”、“原生恢复命令”或 Provider 同步相关操作。",
+                s.id,
+                compact_time(&s.last_timestamp),
+                if s.provider.is_empty() { unknown(lang) } else { &s.provider },
+                s.user_turns(),
+                if s.thread_name.is_empty() { unnamed(lang) } else { &s.thread_name },
+                if s.cwd.is_empty() { unknown_cwd(lang) } else { &s.cwd }
+            )),
+            Lang::En => set_details(&format!(
+                "Selected session\r\n\r\nid:       {}\r\nupdated:  {}\r\nprovider: {}\r\nturns:    {}\r\ncontext:  {} | {}\r\n\r\nClick Show Detail, Diagnose /resume Risk, Native Resume Command, or Provider Sync actions.",
+                s.id,
+                compact_time(&s.last_timestamp),
+                if s.provider.is_empty() { unknown(lang) } else { &s.provider },
+                s.user_turns(),
+                if s.thread_name.is_empty() { unnamed(lang) } else { &s.thread_name },
+                if s.cwd.is_empty() { unknown_cwd(lang) } else { &s.cwd }
+            )),
+        }
     }
 }
 
@@ -1079,11 +1347,46 @@ fn one_line(t: &str, limit: usize) -> String {
     }
 }
 
-fn render_detail(s: &Session) -> String {
-    let mut out = format!("id:        {}\r\nname:      {}\r\npath:      {}\r\ntime:      {} -> {}\r\ncwd:       {}\r\nprovider:  {}\r\nmodel:     {}\r\nsource:    {}\r\nturns:     user={} assistant={}\r\nevents:    aborted={} rolled_back={}\r\n",
-        s.id, if s.thread_name.is_empty() { "unnamed" } else { &s.thread_name }, s.path.display(), s.first_timestamp, s.last_timestamp, if s.cwd.is_empty() { "unknown" } else { &s.cwd }, if s.provider.is_empty() { "unknown" } else { &s.provider }, if s.model.is_empty() { "unknown" } else { &s.model }, if s.source.is_empty() { "unknown" } else { &s.source }, s.user_turns(), s.assistant_turns(), s.aborted_turns(), s.rolled_back_turns());
+fn render_detail(s: &Session, lang: Lang) -> String {
+    let mut out = match lang {
+        Lang::Zh => format!(
+            "id:        {}\r\n名称:      {}\r\n路径:      {}\r\n时间:      {} -> {}\r\n目录:      {}\r\nprovider:  {}\r\nmodel:     {}\r\n来源:      {}\r\n轮次:      user={} assistant={}\r\n事件:      aborted={} rolled_back={}\r\n",
+            s.id,
+            if s.thread_name.is_empty() { unnamed(lang) } else { &s.thread_name },
+            s.path.display(),
+            s.first_timestamp,
+            s.last_timestamp,
+            if s.cwd.is_empty() { unknown(lang) } else { &s.cwd },
+            if s.provider.is_empty() { unknown(lang) } else { &s.provider },
+            if s.model.is_empty() { unknown(lang) } else { &s.model },
+            if s.source.is_empty() { unknown(lang) } else { &s.source },
+            s.user_turns(),
+            s.assistant_turns(),
+            s.aborted_turns(),
+            s.rolled_back_turns()
+        ),
+        Lang::En => format!(
+            "id:        {}\r\nname:      {}\r\npath:      {}\r\ntime:      {} -> {}\r\ncwd:       {}\r\nprovider:  {}\r\nmodel:     {}\r\nsource:    {}\r\nturns:     user={} assistant={}\r\nevents:    aborted={} rolled_back={}\r\n",
+            s.id,
+            if s.thread_name.is_empty() { unnamed(lang) } else { &s.thread_name },
+            s.path.display(),
+            s.first_timestamp,
+            s.last_timestamp,
+            if s.cwd.is_empty() { unknown(lang) } else { &s.cwd },
+            if s.provider.is_empty() { unknown(lang) } else { &s.provider },
+            if s.model.is_empty() { unknown(lang) } else { &s.model },
+            if s.source.is_empty() { unknown(lang) } else { &s.source },
+            s.user_turns(),
+            s.assistant_turns(),
+            s.aborted_turns(),
+            s.rolled_back_turns()
+        ),
+    };
     if !s.errors.is_empty() {
-        out.push_str("errors:\r\n");
+        out.push_str(match lang {
+            Lang::Zh => "错误:\r\n",
+            Lang::En => "errors:\r\n",
+        });
         for e in s.errors.iter().take(5) {
             out.push_str(&format!("  - {}\r\n", one_line(e, 180)));
         }
@@ -1094,7 +1397,10 @@ fn render_detail(s: &Session) -> String {
         .filter(|m| m.role == "user")
         .collect::<Vec<_>>();
     if !users.is_empty() {
-        out.push_str("recent user prompts:\r\n");
+        out.push_str(match lang {
+            Lang::Zh => "最近用户请求:\r\n",
+            Lang::En => "recent user prompts:\r\n",
+        });
         for m in users.iter().rev().take(20).rev() {
             out.push_str(&format!(
                 "  - {} {}\r\n",
@@ -1105,29 +1411,93 @@ fn render_detail(s: &Session) -> String {
     }
     out
 }
-fn render_restore(s: &Session) -> String {
+
+fn render_restore(s: &Session, lang: Lang) -> String {
     let latest = s.messages.iter().rev().find(|m| m.role == "user");
-    let mut out = format!("# Codex Local Session Restore\n\nPlease restore this local Codex session and continue work.\n\n## Session\n\n- Session id: `{}`\n- Thread name: `{}`\n- Original cwd: `{}`\n- Original provider: `{}`\n- Time range: `{}` -> `{}`\n- Local JSONL: `{}`\n\n## Restore Requirements\n\n1. Read `Local JSONL` first; do not rely on server-side `/resume`.\n2. Summarize latest target, constraints, files, verification status, and remaining work.\n3. Treat the last real user request as current.\n", s.id, if s.thread_name.is_empty() { &s.id } else { &s.thread_name }, if s.cwd.is_empty() { "unknown" } else { &s.cwd }, if s.provider.is_empty() { "unknown" } else { &s.provider }, s.first_timestamp, s.last_timestamp, s.path.display());
+    let mut out = match lang {
+        Lang::Zh => format!(
+            "# Codex 本地会话恢复\n\n请恢复这个本地 Codex 会话并继续任务。\n\n## 会话\n\n- 会话 id: `{}`\n- 会话名称: `{}`\n- 原始 cwd: `{}`\n- 原始 provider: `{}`\n- 时间范围: `{}` -> `{}`\n- 本地 JSONL: `{}`\n\n## 恢复要求\n\n1. 先读取 `本地 JSONL`；不要只依赖服务端 `/resume`。\n2. 总结最新目标、约束、涉及文件、验证状态和剩余工作。\n3. 将最后一条真实用户请求视为当前任务。\n",
+            s.id,
+            if s.thread_name.is_empty() { &s.id } else { &s.thread_name },
+            if s.cwd.is_empty() { unknown(lang) } else { &s.cwd },
+            if s.provider.is_empty() { unknown(lang) } else { &s.provider },
+            s.first_timestamp,
+            s.last_timestamp,
+            s.path.display()
+        ),
+        Lang::En => format!(
+            "# Codex Local Session Restore\n\nPlease restore this local Codex session and continue work.\n\n## Session\n\n- Session id: `{}`\n- Thread name: `{}`\n- Original cwd: `{}`\n- Original provider: `{}`\n- Time range: `{}` -> `{}`\n- Local JSONL: `{}`\n\n## Restore Requirements\n\n1. Read `Local JSONL` first; do not rely on server-side `/resume`.\n2. Summarize latest target, constraints, files, verification status, and remaining work.\n3. Treat the last real user request as current.\n",
+            s.id,
+            if s.thread_name.is_empty() { &s.id } else { &s.thread_name },
+            if s.cwd.is_empty() { unknown(lang) } else { &s.cwd },
+            if s.provider.is_empty() { unknown(lang) } else { &s.provider },
+            s.first_timestamp,
+            s.last_timestamp,
+            s.path.display()
+        ),
+    };
     if let Some(m) = latest {
-        out.push_str(&format!("\n## Last User Request\n\n{}\n", m.text));
+        out.push_str(match lang {
+            Lang::Zh => "\n## 最后一条用户请求\n\n",
+            Lang::En => "\n## Last User Request\n\n",
+        });
+        out.push_str(&m.text);
+        out.push('\n');
     }
     out
 }
-fn render_native(s: &Session) -> String {
+
+fn render_native(s: &Session, lang: Lang) -> String {
     let c = read_config();
     let cur = c.values.get("model_provider").cloned().unwrap_or_default();
-    let mut out = format!("session:          {} ({})\r\nsession provider: {}\r\ncurrent provider: {}\r\nconfig:           {}\r\n", s.id, if s.thread_name.is_empty() { "unnamed" } else { &s.thread_name }, if s.provider.is_empty() { "unknown" } else { &s.provider }, if cur.is_empty() { "unknown" } else { &cur }, c.path.display());
+    let mut out = match lang {
+        Lang::Zh => format!(
+            "会话:              {} ({})\r\n会话 provider:     {}\r\n当前 provider:     {}\r\n配置文件:          {}\r\n",
+            s.id,
+            if s.thread_name.is_empty() { unnamed(lang) } else { &s.thread_name },
+            if s.provider.is_empty() { unknown(lang) } else { &s.provider },
+            if cur.is_empty() { unknown(lang) } else { &cur },
+            c.path.display()
+        ),
+        Lang::En => format!(
+            "session:          {} ({})\r\nsession provider: {}\r\ncurrent provider: {}\r\nconfig:           {}\r\n",
+            s.id,
+            if s.thread_name.is_empty() { unnamed(lang) } else { &s.thread_name },
+            if s.provider.is_empty() { unknown(lang) } else { &s.provider },
+            if cur.is_empty() { unknown(lang) } else { &cur },
+            c.path.display()
+        ),
+    };
     if s.provider.is_empty() {
-        out.push_str("native status:    blocked\r\nreason:           session JSONL does not record original provider\r\n");
+        out.push_str(match lang {
+            Lang::Zh => "原生状态:          阻止\r\n原因:              会话 JSONL 没有记录原始 provider\r\n",
+            Lang::En => "native status:    blocked\r\nreason:           session JSONL does not record original provider\r\n",
+        });
         return out;
     }
     if !c.providers.contains(&s.provider) {
-        out.push_str(&format!("native status:    blocked\r\nreason:           provider '{}' is not defined in current config\r\n", s.provider));
+        match lang {
+            Lang::Zh => out.push_str(&format!(
+                "原生状态:          阻止\r\n原因:              当前配置未定义 provider '{}'\r\n",
+                s.provider
+            )),
+            Lang::En => out.push_str(&format!(
+                "native status:    blocked\r\nreason:           provider '{}' is not defined in current config\r\n",
+                s.provider
+            )),
+        }
     } else {
-        out.push_str("native status:    possible\r\nnote:             provider must support response-chain resume\r\n");
+        out.push_str(match lang {
+            Lang::Zh => "原生状态:          可能可用\r\n说明:              provider 必须支持 response-chain resume\r\n",
+            Lang::En => "native status:    possible\r\nnote:             provider must support response-chain resume\r\n",
+        });
     }
+    out.push_str(match lang {
+        Lang::Zh => "命令:\r\n  ",
+        Lang::En => "command:\r\n  ",
+    });
     out.push_str(&format!(
-        "command:\r\n  codex resume {} -c model_provider={} -c disable_response_storage=false",
+        "codex resume {} -c model_provider={} -c disable_response_storage=false",
         s.id,
         quote_toml(&s.provider)
     ));
@@ -1137,63 +1507,129 @@ fn render_native(s: &Session) -> String {
     out.push_str("\r\n");
     out
 }
-fn render_doctor(s: &Session) -> String {
+
+fn render_doctor(s: &Session, lang: Lang) -> String {
     let c = read_config();
     let cur = c.values.get("model_provider").cloned().unwrap_or_default();
     let mut risks = vec![];
     if !cur.is_empty() && !s.provider.is_empty() && cur != s.provider {
-        risks.push(format!(
-            "provider changed: session used '{}', current config uses '{}'",
-            s.provider, cur
-        ));
+        risks.push(match lang {
+            Lang::Zh => format!(
+                "provider 已变化：会话使用 '{}'，当前配置使用 '{}'",
+                s.provider, cur
+            ),
+            Lang::En => format!(
+                "provider changed: session used '{}', current config uses '{}'",
+                s.provider, cur
+            ),
+        });
     }
     if c.values
         .get("disable_response_storage")
         .map(|x| x == "true")
         .unwrap_or(false)
     {
-        risks.push("disable_response_storage is true, so server-side response-chain resume may be unavailable".into());
+        risks.push(match lang {
+            Lang::Zh => "disable_response_storage 为 true，服务端 response-chain resume 可能不可用".into(),
+            Lang::En => "disable_response_storage is true, so server-side response-chain resume may be unavailable".into(),
+        });
     }
     if c.values
         .get("wire_api")
         .map(|x| x == "responses")
         .unwrap_or(false)
     {
-        risks.push("current provider uses the Responses API; provider compatibility must include response storage/readback".into());
+        risks.push(match lang {
+            Lang::Zh => "当前 provider 使用 Responses API；provider 必须兼容 response storage/readback".into(),
+            Lang::En => "current provider uses the Responses API; provider compatibility must include response storage/readback".into(),
+        });
     }
     if s.assistant_turns() == 0 {
-        risks.push("session has no completed assistant messages in local JSONL".into());
+        risks.push(match lang {
+            Lang::Zh => "本地 JSONL 中没有已完成的 assistant 消息".into(),
+            Lang::En => "session has no completed assistant messages in local JSONL".into(),
+        });
     }
     if s.aborted_turns() > 0 {
-        risks.push(format!(
-            "session records {} aborted turn(s)",
-            s.aborted_turns()
-        ));
+        risks.push(match lang {
+            Lang::Zh => format!("会话记录了 {} 个中止轮次", s.aborted_turns()),
+            Lang::En => format!("session records {} aborted turn(s)", s.aborted_turns()),
+        });
     }
     if s.rolled_back_turns() > 0 {
-        risks.push(format!(
-            "session records {} rollback event(s)",
-            s.rolled_back_turns()
-        ));
+        risks.push(match lang {
+            Lang::Zh => format!("会话记录了 {} 个回滚事件", s.rolled_back_turns()),
+            Lang::En => format!(
+                "session records {} rollback event(s)",
+                s.rolled_back_turns()
+            ),
+        });
     }
     for e in &s.errors {
         if e.contains("/v1/responses") || e.contains("Invalid URL") || e.contains("Bad Gateway") {
-            risks.push(format!(
-                "session already recorded API error: {}",
-                one_line(e, 160)
-            ));
+            risks.push(match lang {
+                Lang::Zh => format!("会话已记录 API 错误：{}", one_line(e, 160)),
+                Lang::En => format!("session already recorded API error: {}", one_line(e, 160)),
+            });
             break;
         }
         if e.contains("stream disconnected before completion") {
-            risks.push("session recorded a stream that closed before response.completed".into());
+            risks.push(match lang {
+                Lang::Zh => "会话记录了 response.completed 前流断开".into(),
+                Lang::En => {
+                    "session recorded a stream that closed before response.completed".into()
+                }
+            });
             break;
         }
     }
-    let mut out = format!("session:          {} ({})\r\nsession provider: {}\r\ncurrent provider: {}\r\ncurrent base_url: {}\r\nwire_api:         {}\r\nstorage disabled: {}\r\nprovider exists:  {}\r\nassistant turns:  {}\r\naborted turns:    {}\r\nrollback events:  {}\r\n", s.id, if s.thread_name.is_empty() { "unnamed" } else { &s.thread_name }, if s.provider.is_empty() { "unknown" } else { &s.provider }, if cur.is_empty() { "unknown" } else { &cur }, c.values.get("base_url").map(String::as_str).unwrap_or("unknown"), c.values.get("wire_api").map(String::as_str).unwrap_or("unknown"), c.values.get("disable_response_storage").map(String::as_str).unwrap_or("unknown"), if !s.provider.is_empty() && c.providers.contains(&s.provider) { "true" } else { "false" }, s.assistant_turns(), s.aborted_turns(), s.rolled_back_turns());
+    let provider_exists = !s.provider.is_empty() && c.providers.contains(&s.provider);
+    let mut out = match lang {
+        Lang::Zh => format!(
+            "会话:              {} ({})\r\n会话 provider:     {}\r\n当前 provider:     {}\r\n当前 base_url:     {}\r\nwire_api:          {}\r\n已禁用 storage:    {}\r\nprovider 存在:     {}\r\nassistant 轮次:    {}\r\n中止轮次:          {}\r\n回滚事件:          {}\r\n",
+            s.id,
+            if s.thread_name.is_empty() { unnamed(lang) } else { &s.thread_name },
+            if s.provider.is_empty() { unknown(lang) } else { &s.provider },
+            if cur.is_empty() { unknown(lang) } else { &cur },
+            c.values.get("base_url").map(String::as_str).unwrap_or(unknown(lang)),
+            c.values.get("wire_api").map(String::as_str).unwrap_or(unknown(lang)),
+            c.values
+                .get("disable_response_storage")
+                .map(String::as_str)
+                .unwrap_or(unknown(lang)),
+            yes_no(lang, provider_exists),
+            s.assistant_turns(),
+            s.aborted_turns(),
+            s.rolled_back_turns()
+        ),
+        Lang::En => format!(
+            "session:          {} ({})\r\nsession provider: {}\r\ncurrent provider: {}\r\ncurrent base_url: {}\r\nwire_api:         {}\r\nstorage disabled: {}\r\nprovider exists:  {}\r\nassistant turns:  {}\r\naborted turns:    {}\r\nrollback events:  {}\r\n",
+            s.id,
+            if s.thread_name.is_empty() { unnamed(lang) } else { &s.thread_name },
+            if s.provider.is_empty() { unknown(lang) } else { &s.provider },
+            if cur.is_empty() { unknown(lang) } else { &cur },
+            c.values.get("base_url").map(String::as_str).unwrap_or(unknown(lang)),
+            c.values.get("wire_api").map(String::as_str).unwrap_or(unknown(lang)),
+            c.values
+                .get("disable_response_storage")
+                .map(String::as_str)
+                .unwrap_or(unknown(lang)),
+            yes_no(lang, provider_exists),
+            s.assistant_turns(),
+            s.aborted_turns(),
+            s.rolled_back_turns()
+        ),
+    };
     if risks.is_empty() {
-        out.push_str("resume risk:      no obvious local risk found\r\n");
+        out.push_str(match lang {
+            Lang::Zh => "resume 风险:       未发现明显本地风险\r\n",
+            Lang::En => "resume risk:      no obvious local risk found\r\n",
+        });
     } else {
-        out.push_str("resume risk:      high\r\nwhy:\r\n");
+        out.push_str(match lang {
+            Lang::Zh => "resume 风险:       高\r\n原因:\r\n",
+            Lang::En => "resume risk:      high\r\nwhy:\r\n",
+        });
         for r in risks {
             out.push_str(&format!("  - {}\r\n", r));
         }
@@ -1201,19 +1637,29 @@ fn render_doctor(s: &Session) -> String {
     out
 }
 
-fn render_sync(dry_run: bool) -> Result<String, String> {
+fn render_sync(dry_run: bool, lang: Lang) -> Result<String, String> {
     let c = read_config();
     let current = c.values.get("model_provider").cloned().unwrap_or_default();
     if current.is_empty() || !c.providers.contains(&current) {
-        return Err("current model_provider is missing or not defined".into());
+        return Err(match lang {
+            Lang::Zh => "当前 model_provider 缺失或未定义".into(),
+            Lang::En => "current model_provider is missing or not defined".into(),
+        });
     }
     let backup = codex_home().join(format!("provider-sync-backup-{}", timestamp_compact()));
-    let mut out = format!(
-        "current provider: {}\r\ndefined providers: {}\r\ndry run:          {}\r\n",
-        current,
-        c.providers.iter().cloned().collect::<Vec<_>>().join(", "),
-        dry_run
-    );
+    let providers = c.providers.iter().cloned().collect::<Vec<_>>().join(", ");
+    let mut out = match lang {
+        Lang::Zh => format!(
+            "当前 provider:     {}\r\n已定义 providers: {}\r\n预览模式:          {}\r\n",
+            current,
+            providers,
+            yes_no(lang, dry_run)
+        ),
+        Lang::En => format!(
+            "current provider: {}\r\ndefined providers: {}\r\ndry run:          {}\r\n",
+            current, providers, dry_run
+        ),
+    };
     let mut agent_changes = 0;
     let agents_dir = codex_home().join("agents");
     if let Ok(rd) = fs::read_dir(&agents_dir) {
@@ -1243,10 +1689,10 @@ fn render_sync(dry_run: bool) -> Result<String, String> {
             }
         }
     }
-    out.push_str(&format!(
-        "agent refs:       {} change(s)\r\n",
-        agent_changes
-    ));
+    out.push_str(&match lang {
+        Lang::Zh => format!("agent 引用:       {} 处变更\r\n", agent_changes),
+        Lang::En => format!("agent refs:       {} change(s)\r\n", agent_changes),
+    });
     let mut session_changes = 0;
     for path in session_paths(&codex_home(), false) {
         let text = fs::read_to_string(&path).unwrap_or_default();
@@ -1286,15 +1732,21 @@ fn render_sync(dry_run: bool) -> Result<String, String> {
             }
         }
     }
-    out.push_str(&format!(
-        "session refs:     {} change(s)\r\n",
-        session_changes
-    ));
+    out.push_str(&match lang {
+        Lang::Zh => format!("session 引用:     {} 处变更\r\n", session_changes),
+        Lang::En => format!("session refs:     {} change(s)\r\n", session_changes),
+    });
     if !dry_run && (agent_changes > 0 || session_changes > 0) {
-        out.push_str(&format!("backup:           {}\r\n", backup.display()));
+        out.push_str(&match lang {
+            Lang::Zh => format!("备份:              {}\r\n", backup.display()),
+            Lang::En => format!("backup:           {}\r\n", backup.display()),
+        });
     }
     if agent_changes == 0 && session_changes == 0 {
-        out.push_str("status:           already synced\r\n");
+        out.push_str(match lang {
+            Lang::Zh => "状态:              已经同步，无需更改\r\n",
+            Lang::En => "status:           already synced\r\n",
+        });
     }
     Ok(out)
 }
@@ -1405,29 +1857,38 @@ fn replace_model_provider_line(text: &str, provider: &str) -> String {
 
 fn export_restore() {
     if let Some(s) = selected_session() {
+        let lang = current_lang();
         let dir = dirs_home().join("Downloads");
         let dir = if dir.exists() { dir } else { dirs_home() };
         let prefix = s.id.chars().take(8).collect::<String>();
         let path = dir.join(format!("codex-restore-{}.md", prefix));
-        match fs::write(&path, render_restore(&s)) {
+        match fs::write(&path, render_restore(&s, lang)) {
             Ok(_) => {
-                set_details(&format!("Wrote restoration prompt: {}", path.display()));
+                set_details(&match lang {
+                    Lang::Zh => format!("已写入恢复提示文件: {}", path.display()),
+                    Lang::En => format!("Wrote restoration prompt: {}", path.display()),
+                });
                 shell_open_select(&path);
             }
-            Err(e) => set_details(&format!("error: {e}")),
+            Err(e) => set_details(&error_text(e)),
         }
     }
 }
 fn copy_restore() {
     if let Some(s) = selected_session() {
-        let prompt = render_restore(&s);
+        let lang = current_lang();
+        let prompt = render_restore(&s, lang);
         if set_clipboard(&prompt).is_ok() {
-            set_details(&format!(
-                "Restore prompt copied to clipboard.\r\n\r\n{}",
-                prompt
-            ));
+            let prefix = match lang {
+                Lang::Zh => "恢复提示已复制到剪贴板。",
+                Lang::En => "Restore prompt copied to clipboard.",
+            };
+            set_details(&format!("{prefix}\r\n\r\n{prompt}"));
         } else {
-            set_details("error: failed to set clipboard");
+            set_details(&match lang {
+                Lang::Zh => "错误: 写入剪贴板失败".to_string(),
+                Lang::En => "error: failed to set clipboard".to_string(),
+            });
         }
     }
 }

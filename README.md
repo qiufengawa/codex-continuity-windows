@@ -2,13 +2,14 @@
 
 [中文说明](README.zh-CN.md)
 
-Codex Continuity for Windows is a native Windows GUI utility for keeping Codex CLI local sessions usable after switching API providers.
+Codex Continuity for Windows is a native Windows GUI utility for keeping Codex CLI local sessions usable after switching API providers. The interface defaults to Chinese and includes an in-app Chinese/English language switch.
 
 The release package contains a real double-clickable `.exe`. End users do **not** need Python, PowerShell scripts, Rust, the .NET SDK, or any developer runtime.
 
 ## Requirements
 
 - Windows 10 or Windows 11, 64-bit x86 PC
+- Native Chinese UI by default; click **English** in the app to switch languages
 - Codex CLI local data under `%USERPROFILE%\.codex`
 
 ## Run
@@ -32,6 +33,7 @@ Codex Continuity.exe
 - Sync session/agent provider metadata to the current provider with automatic backup.
 - Export or copy a lightweight restore prompt.
 - Open the local sessions folder.
+- Switch the GUI and user-facing messages between Chinese and English.
 
 ## Safety
 
